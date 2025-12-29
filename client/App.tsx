@@ -1,98 +1,62 @@
-import {
-	DefaultActionsMenu,
-	DefaultQuickActions,
-	DefaultStylePanel,
-	TLComponents,
-	Tldraw,
-	TldrawOptions,
-	TldrawUiToolbar,
-	useEditor,
-	useValue,
-} from 'tldraw'
-import { overrides, WorkflowToolbar } from './components/WorkflowToolbar.tsx'
+import { Tldraw } from 'tldraw'
+import 'tldraw/tldraw.css'
+
 import { ConnectionBindingUtil } from './connection/ConnectionBindingUtil.tsx'
 import { ConnectionShapeUtil } from './connection/ConnectionShapeUtil.tsx'
-import { keepConnectionsAtBottom } from './connection/keepConnectionsAtBottom.tsx'
-import { disableTransparency } from './disableTransparency.tsx'
 import { NodeShapeUtil } from './nodes/NodeShapeUtil.tsx'
+import { getNodeDefinition } from './nodes/nodeTypes'
 import { PointingPort } from './ports/PointingPort.tsx'
 
-// Define custom shape utilities that extend tldraw's shape system
+// Only the essential custom pieces
 const shapeUtils = [NodeShapeUtil, ConnectionShapeUtil]
-// Define binding utilities that handle relationships between shapes
 const bindingUtils = [ConnectionBindingUtil]
 
-// Customize tldraw's UI components to add workflow-specific functionality
-const components: TLComponents = {
-	Toolbar: () => (
-		<>
-			<WorkflowToolbar />
-			<div className="tlui-main-toolbar tlui-main-toolbar--horizontal">
-				<TldrawUiToolbar className="tlui-main-toolbar__tools" label="Actions">
-					<DefaultQuickActions />
-					<DefaultActionsMenu />
-				</TldrawUiToolbar>
-			</div>
-		</>
-	),
-
-	MenuPanel: () => null,
-	StylePanel: () => {
-		const editor = useEditor()
-		const shouldShowStylePanel = useValue(
-			'shouldShowStylePanel',
-			() => {
-				return (
-					!editor.isIn('select') ||
-					editor.getSelectedShapes().some((s) => s.type !== 'node' && s.type !== 'connection')
-				)
-			},
-			[editor]
-		)
-		if (!shouldShowStylePanel) return
-		return <DefaultStylePanel />
-	},
-}
-
-const options: Partial<TldrawOptions> = {
-	actionShortcutsLocation: 'menu',
-	maxPages: 1,
-}
-
 function App() {
-	return (
-		<div className="workflow" style={{ position: 'fixed', inset: 0 }}>
-			<Tldraw
-				persistenceKey="workflow"
-				options={options}
-				overrides={overrides}
-				shapeUtils={shapeUtils}
-				bindingUtils={bindingUtils}
-				components={components}
-				onMount={(editor) => {
-					;(window as any).editor = editor
-					if (!editor.getCurrentPageShapes().some((s) => s.type === 'node')) {
-						editor.createShape({ type: 'node', x: 200, y: 200 })
-					}
+  return (
+    <div style={{ position: 'fixed', inset: 0 }}>
+      <Tldraw
+        // persistenceKey="grok-playground"
+        shapeUtils={shapeUtils}
+        bindingUtils={bindingUtils}
+        // Hide all default UI — pure canvas
+        hideUi
+        onMount={(editor) => {
+          // Optional: expose for debugging
+          ;(window as any).editor = editor
 
-					editor.user.updateUserPreferences({ isSnapMode: true })
+          editor.getStateDescendant('select')!.addChild(PointingPort)
 
-					// Add our custom pointing port tool to the select tool's state machine
-					// This allows users to create connections by pointing at ports
-					editor.getStateDescendant('select')!.addChild(PointingPort)
+          // If canvas is empty, create one centered invitation node
+          const shapes = editor.getCurrentPageShapes()
+          if (shapes.length > 0) {
+            editor.deleteShapes(shapes)
+          }
+          if (shapes.length === 0 || !shapes.some((s) => s.type === 'node')) {
+            const viewport = editor.getViewportPageBounds()
+            const centerX = viewport.width / 2 - 150  // rough center, adjust if needed
+            const centerY = viewport.height / 2 - 100
 
-					// todo: move connections to on the canvas layer
 
-					// Ensure connections always stay at the bottom of the shape stack
-					// This prevents them from covering other shapes
-					keepConnectionsAtBottom(editor)
-
-					// Disable transparency for workflow shapes
-					disableTransparency(editor, ['node', 'connection'])
-				}}
-			/>
-		</div>
-	)
+            editor.createShape({
+              type: 'node',
+              x: centerX,
+              y: centerY,
+              props: {
+                node: {
+                  type: 'message',
+                  userMessage: '',  // Empty input — user types here
+                  assistantMessage:
+                    'What are you curious about today?\n\n' +
+                    'Type your question or idea below and press Send (or Enter) to explore it with Grok.\n\n' +
+                    'Select any text in a response and branch from a port to dive deeper.',
+                },
+              },
+            })
+          }
+        }}
+      />
+    </div>
+  )
 }
 
 export default App

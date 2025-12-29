@@ -1,10 +1,9 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { ExecutionContext } from '@cloudflare/workers-types'
 import { generateText, ModelMessage, smoothStream, streamText } from 'ai'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { AutoRouter, error, IRequest } from 'itty-router'
 import { Environment } from './types'
-import { createOpenAI } from '@ai-sdk/openai';
+import { createXai } from '@ai-sdk/xai';
 
 // Worker (handles AI requests directly)
 export default class extends WorkerEntrypoint<Environment> {
@@ -22,12 +21,11 @@ export default class extends WorkerEntrypoint<Environment> {
 	}
 
 	private getModel(env: Environment) {
-		const grokProvider = createOpenAI({
-		    apiKey: env.OPENAI_API_KEY,  // Explicit – fixes the load error in Workers
-		    baseURL: env.OPENAI_BASE_URL || 'https://api.x.ai/v1',
+		const xai = createXai({
+		    apiKey: env.XAI_API_KEY,
 		  });
 
-		return grokProvider('grok-4');
+		return xai.responses('grok-4');
 	}
 
 	// Generate a new response from the model
@@ -54,10 +52,15 @@ export default class extends WorkerEntrypoint<Environment> {
 	// Stream a new response from the model
 	private async stream(request: IRequest, env: Environment): Promise<Response> {
 		try {
-			const prompt = (await request.json()) as Array<ModelMessage>
+
+			const model = this.getModel(env)
+			console.log(model.specification)
+			const requestjson = await request.json()
+			console.log('requestjson', requestjson)
+			const prompt = (requestjson) as Array<ModelMessage>
 
 			const result = streamText({
-				model: this.getModel(env),
+				model: model,
 				messages: prompt,
 				experimental_transform: smoothStream(),
 			})
