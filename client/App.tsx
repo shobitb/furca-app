@@ -1,60 +1,80 @@
-import { Tldraw } from 'tldraw'
-import 'tldraw/tldraw.css'
+import ReactFlow, { Background, Controls, MiniMap, useNodesState, useEdgesState } from 'reactflow'
+import { useEffect, useCallback } from 'react'
+import MessageNode from './nodes/MessageNode.tsx'
+import 'reactflow/dist/style.css'
 
-import { ConnectionBindingUtil } from './connection/ConnectionBindingUtil.tsx'
-import { ConnectionShapeUtil } from './connection/ConnectionShapeUtil.tsx'
-import { NodeShapeUtil } from './nodes/NodeShapeUtil.tsx'
-import { getNodeDefinition } from './nodes/nodeTypes'
-import { PointingPort } from './ports/PointingPort.tsx'
-
-// Only the essential custom pieces
-const shapeUtils = [NodeShapeUtil, ConnectionShapeUtil]
-const bindingUtils = [ConnectionBindingUtil]
+const nodeTypes = { message: MessageNode }
 
 function App() {
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+
+  // The callback that creates new node + edge
+  const onBranch = useCallback((parentId: string, selectedText: string, withContext: boolean) => {
+    const parentNode = nodes.find(n => n.id === parentId)
+    if (!parentNode) return
+
+    const newNodeId = Date.now().toString()
+
+    const newNode = {
+      id: newNodeId,
+      type: 'message',
+      position: {
+        x: parentNode.position.x + 460,
+        y: parentNode.position.y + 300,  // Adjust as needed
+      },
+      data: {
+        userMessage: withContext
+          ? `Continuing from context:\n"${selectedText}"`
+          : selectedText,
+        assistantMessage: '',
+        onBranch,  // Pass it down to the new node too!
+      },
+    }
+
+    setNodes((nds) => nds.concat(newNode))
+
+    setEdges((eds) => eds.concat({
+      id: `e${parentId}-${newNodeId}`,
+      source: parentId,
+      target: newNodeId,
+      sourceHandle: 'output',
+      targetHandle: 'input',
+    }))
+  }, [nodes, setNodes, setEdges])
+
+  // Initial invitation node
+  useEffect(() => {
+    if (nodes.length === 0) {
+      setNodes([
+        {
+          id: 'root',
+          type: 'message',
+          position: { x: 400, y: 200 },
+          data: {
+            userMessage: '',
+            assistantMessage: 'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
+            onBranch,  // Pass the callback
+          },
+        },
+      ])
+    }
+  }, [nodes.length, setNodes, onBranch])
+
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
-      <Tldraw
-        // persistenceKey="grok-playground"
-        shapeUtils={shapeUtils}
-        bindingUtils={bindingUtils}
-        // Hide all default UI — pure canvas
-        hideUi
-        onMount={(editor) => {
-          // Optional: expose for debugging
-          ;(window as any).editor = editor
-
-          editor.getStateDescendant('select')!.addChild(PointingPort)
-
-          // If canvas is empty, create one centered invitation node
-          const shapes = editor.getCurrentPageShapes()
-          if (shapes.length > 0) {
-            editor.deleteShapes(shapes)
-          }
-          if (shapes.length === 0 || !shapes.some((s) => s.type === 'node')) {
-            const viewport = editor.getViewportPageBounds()
-            const centerX = viewport.width / 2 - 150  // rough center, adjust if needed
-            const centerY = viewport.height / 2 - 100
-
-
-            editor.createShape({
-              type: 'node',
-              x: centerX,
-              y: centerY,
-              props: {
-                node: {
-                  type: 'message',
-                  userMessage: '',  // Empty input — user types here
-                  assistantMessage:
-                    'What are you curious about today?\n\n' +
-                    'Type your question or idea below and press Send (or Enter) to explore it with Grok.\n\n' +
-                    'Select any text in a response and branch from a port to dive deeper.',
-                },
-              },
-            })
-          }
-        }}
-      />
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+        >
+        <Background />
+        <Controls />
+        <MiniMap />
+      </ReactFlow>
     </div>
   )
 }
