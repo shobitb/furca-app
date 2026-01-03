@@ -1,24 +1,34 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
-import { Handle, Position } from 'reactflow'
+import { createPortal } from 'react-dom';
+import { Handle, Position, NodeProps, useUpdateNodeInternals } from '@xyflow/react'
+import { type Node } from '@xyflow/react';
 import ReactMarkdown from 'react-markdown'
 
 type MessageNodeData = {
   userMessage: string
   assistantMessage: string
-  onSend: (message: string) => void
-  onBranch: (text: string, withContext: boolean) => void
+  onSend: (parentId: string, message: string) => void
+  onBranch: (id: string, text: string, withContext: boolean) => void
+  streamFinished?: boolean
   parentId?: string
 }
 
-export default function MessageNode({ data, id }: { data: MessageNodeData; id: string }) {
+export type MessageNodeType = Node<MessageNodeData, 'message'>;
+
+export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
   const [userMessage, setUserMessage] = useState(data.userMessage || '')
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [data.assistantMessage, id, updateNodeInternals]);
+
   const handleSend = useCallback(() => {
     if (userMessage.trim()) {
-      data.onSend(userMessage.trim())
-      setUserMessage('')
+      data.onSend(id, userMessage.trim())
     }
   }, [userMessage, data.onSend])
 
@@ -39,7 +49,7 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
     if (selectedText) {
       setMenuPosition({
         x: e.clientX,
-        y: e.clientY + 10, // Small offset below cursor
+        y: e.clientY
       })
     } else {
       setMenuPosition(null)
@@ -75,6 +85,7 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
       }}
     >
       {/* Input Port (left) */}
+      <Handle type="target" position={Position.Top} id="top" style={{ left: '50%' }} />
       <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} />
 
       {/* User Input */}
@@ -116,6 +127,7 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
         <div style={{ padding: '0 16px 16px' }}>
           <div
             onContextMenu={handleContextMenu}
+            className="nodrag"
             style={{
               background: '#f8f9fa',
               padding: '14px 16px',
@@ -131,10 +143,11 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
 
             {/* Context Menu */}
             {menuPosition && (
-              <div
+              createPortal(<div
                 ref={menuRef}
                 style={{
                   position: 'fixed',
+                  whiteSpace: 'nowrap',
                   left: menuPosition.x,
                   top: menuPosition.y,
                   background: 'white',
@@ -151,8 +164,9 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
                 <button
                   onClick={() => createBranch(false)}
                   style={{
+                    display: 'block',
                     width: '100%',
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     textAlign: 'left',
                     background: 'none',
                     border: 'none',
@@ -166,8 +180,9 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
                 <button
                   onClick={() => createBranch(true)}
                   style={{
+                    display: 'block',
                     width: '100%',
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     textAlign: 'left',
                     background: 'none',
                     border: 'none',
@@ -178,7 +193,8 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
                 >
                   Branch with selection and context
                 </button>
-              </div>
+              </div>,
+              document.body)
             )}
           </div>
         </div>
@@ -186,6 +202,7 @@ export default function MessageNode({ data, id }: { data: MessageNodeData; id: s
 
       {/* Output Port (right) */}
       <Handle type="source" position={Position.Right} id="output" style={{ top: '50%' }} />
+      <Handle type="source" position={Position.Bottom} id="bottom" style={{ left: '50%' }} />
     </div>
   )
 }
