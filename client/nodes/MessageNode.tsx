@@ -80,7 +80,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
         border: '1px solid #ddd',
         borderRadius: '12px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-        width: 340,
+        width: 680,
         fontFamily: 'system-ui, sans-serif',
       }}
     >

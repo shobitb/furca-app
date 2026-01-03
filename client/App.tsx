@@ -4,7 +4,6 @@ import {
   Controls,
   MiniMap,
   ReactFlowProvider,
-  useReactFlow,
   useNodesState,
   useEdgesState,
   type Edge
@@ -13,18 +12,18 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenAI from 'openai'
 import MessageNode, { type MessageNodeType } from './nodes/MessageNode.tsx'
 import '@xyflow/react/dist/style.css'
-import ELK from 'elkjs/lib/elk.bundled.js'
+// import ELK from 'elkjs/lib/elk.bundled.js'
 
-const elk = new ELK()
+// const elk = new ELK()
 
-const elkOptions = {
-  'elk.algorithm': 'layered',
-  'elk.direction': 'DOWN',
-  'elk.spacing.nodeNode': '80',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '120',
-  'elk.layered.considerModelOrder': 'true',
-  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-}
+// const elkOptions = {
+//   'elk.algorithm': 'layered',
+//   'elk.direction': 'DOWN',
+//   'elk.spacing.nodeNode': '80',
+//   'elk.layered.spacing.nodeNodeBetweenLayers': '120',
+//   'elk.layered.considerModelOrder': 'true',
+//   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+// }
 
 const nodeTypes = { message: MessageNode }
 
@@ -237,6 +236,9 @@ function ReactFlowContent() {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
+      panOnScroll={true}
+      zoomOnScroll={false}
+      zoomActivationKeyCode="Meta"
       fitView
     >
       <Background />
