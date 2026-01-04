@@ -1,6 +1,6 @@
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom';
-import { Handle, Position, NodeProps, useUpdateNodeInternals } from '@xyflow/react'
+import { Handle, Position, useInternalNode, NodeProps, useUpdateNodeInternals, useReactFlow } from '@xyflow/react'
 import { type Node } from '@xyflow/react';
 import ReactMarkdown from 'react-markdown'
 
@@ -8,7 +8,7 @@ type MessageNodeData = {
   userMessage: string
   assistantMessage: string
   onSend: (parentId: string, message: string) => void
-  onBranch: (id: string, text: string, withContext: boolean) => void
+  onBranch: (id: string, text: string, withContext: boolean, pos: { x: number; y: number }) => void
   streamFinished?: boolean
   parentId?: string
 }
@@ -18,7 +18,12 @@ export type MessageNodeType = Node<MessageNodeData, 'message'>;
 export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
   const [userMessage, setUserMessage] = useState(data.userMessage || '')
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null)
+
+  const nodeRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { screenToFlowPosition } = useReactFlow();
+
+  const internalNode = useInternalNode(id);
 
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -57,9 +62,26 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
   }, [])
 
     const createBranch = (withContext: boolean) => {
-        const selectedText = window.getSelection()?.toString().trim() || ''
+        const selected = window.getSelection();
+        if (!selected || selected.rangeCount === 0 || !nodeRef.current || !internalNode) return;
+        const range = selected?.getRangeAt(0);
+        const selectedText = selected?.toString().trim() || ''
         if (selectedText) {
-            data.onBranch(id, selectedText, withContext)  // ← Call parent callback with current node ID
+            // Calculate position relative to the node container
+            const textRect = range.getBoundingClientRect();
+
+            const screenCenter = {
+                x: textRect.left + textRect.width / 2,
+                y: textRect.top + textRect.height / 2,
+            };
+            const flowPos = screenToFlowPosition(screenCenter);
+            const relativePos = {
+                x: flowPos.x - internalNode.internals.positionAbsolute.x,
+                y: flowPos.y - internalNode.internals.positionAbsolute.y,
+            };
+            
+            // Notify the App to create the node and edge
+            data.onBranch(id, selectedText, withContext, relativePos);
         }
         setMenuPosition(null)
     }
@@ -75,6 +97,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
 
   return (
     <div
+      ref={nodeRef}
       style={{
         background: 'white',
         border: '1px solid #ddd',

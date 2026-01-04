@@ -6,12 +6,15 @@ import {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  type Node,
   type Edge
 } from '@xyflow/react'
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenAI from 'openai'
 import MessageNode, { type MessageNodeType } from './nodes/MessageNode.tsx'
+import AnchorNode from './nodes/AnchorNode.tsx';
 import '@xyflow/react/dist/style.css'
+
 // import ELK from 'elkjs/lib/elk.bundled.js'
 
 // const elk = new ELK()
@@ -25,7 +28,10 @@ import '@xyflow/react/dist/style.css'
 //   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
 // }
 
-const nodeTypes = { message: MessageNode }
+const nodeTypes = {
+  message: MessageNode,
+  anchor: AnchorNode
+}
 
 const openai = new OpenAI({
   apiKey: import.meta.env.VITE_GROK_API_KEY,
@@ -35,32 +41,46 @@ const openai = new OpenAI({
 
 // Inner component — this is where hooks are allowed
 function ReactFlowContent() {
-  const [nodes, setNodes, onNodesChange] = useNodesState<MessageNodeType>([])
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
 
   const onSendRef = useRef<(parentId: string, message: string) => void>()
-  const onBranchRef = useRef<(parentId: string, selectedText: string, withContext: boolean) => void>()
+  const onBranchRef = useRef<(parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number; y: number }) => void>()
 
   const triggerSend = useCallback((parentId: string, message: string) => {
     onSendRef.current?.(parentId, message)
   }, [])
 
-  const triggerBranch = useCallback((parentId: string, selectedText: string, withContext: boolean) => {
-    onBranchRef.current?.(parentId, selectedText, withContext)
+  const triggerBranch = useCallback((parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number; y: number }) => {
+    onBranchRef.current?.(parentId, selectedText, withContext, relativePos)
   }, [])
 
   const onBranch = useCallback(
-    (parentId: string, selectedText: string, withContext: boolean) => {
+    (parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number, y: number }) => {
       const parentNode = nodes.find((n) => n.id === parentId)
       if (!parentNode) return
 
-      const newNodeId = Date.now().toString()
+      const anchorId = `anchor-${Date.now()}`;
+      const newNodeId = `node-${Date.now()}`;
+
+      const anchorNode: Node = {
+        id: anchorId,
+        type: 'anchor',
+        // Position is relative to the parent because we set parentId
+        position: { x: relativePos.x - 4, y: relativePos.y - 4 },
+        parentId: parentId, // This makes the anchor move with the message box
+        extent: 'parent' as const,   // Keeps it locked inside the parent container
+        draggable: false,
+        zIndex: 1001,       // Sits on top of the parent message
+        data: {},
+      };
 
       const newNode: MessageNodeType = {
         id: newNodeId,
         type: 'message',
-        position: { x: 0, y: 0 },
+        position: { x: parentNode.position.x + 450, y: parentNode.position.y },
+        zIndex: 1000,
         data: {
           userMessage: withContext
             ? `Continuing from context:\n"${selectedText}"`
@@ -71,13 +91,19 @@ function ReactFlowContent() {
         },
       }
 
-      setNodes((nds) => [...nds, newNode]);
+      setNodes((nds) => [...nds, anchorNode, newNode]);
       setEdges((eds) => [
         ...eds,
         {
-          id: `e${parentId}-${newNodeId}`,
-          source: parentId,
+          id: `e${anchorId}-${newNodeId}`,
+          source: anchorId,
           target: newNodeId,
+          targetHandle: 'input',
+          style: { 
+            stroke: '#0066ff', 
+            strokeWidth: 1,
+            opacity: 0.3 
+          },
         },
       ]);
     },
