@@ -6,12 +6,13 @@ import {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge
 } from '@xyflow/react'
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import OpenAI from 'openai'
-import MessageNode, { type MessageNodeType } from './nodes/MessageNode.tsx'
+import MessageNode, { MessageNodeData, type MessageNodeType } from './nodes/MessageNode.tsx'
 import AnchorNode from './nodes/AnchorNode.tsx';
 import '@xyflow/react/dist/style.css'
 
@@ -44,26 +45,123 @@ function ReactFlowContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
+  
+  const { getNodes, getEdges } = useReactFlow();
 
-  const onSendRef = useRef<(parentId: string, message: string) => void>()
-  const onBranchRef = useRef<(parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number; y: number }) => void>()
+  const onDelete = useCallback((nodeId: string) => {
+    const currentEdges = getEdges();
+    const currentNodes = getNodes();
 
-  const triggerSend = useCallback((parentId: string, message: string) => {
-    onSendRef.current?.(parentId, message)
-  }, [])
+    const getDescendants = (id: string, allEdges: Edge[]): string[] => {
+      const children = allEdges
+      .filter((e) => e.source === id)
+      .map((e) => e.target);
+      
+      let descendants = [...children];
+      for (const childId of children) {
+        descendants = [...descendants, ...getDescendants(childId, allEdges)];
+      }
+      return descendants;
+    };
+    
+    const descendantIds = getDescendants(nodeId, currentEdges);
+    const incomingEdge = currentEdges.find((e) => e.target === nodeId);
+    const sourceNode = currentNodes.find((n) => n.id === incomingEdge?.source);
+    const anchorIdToRemove = sourceNode?.type === 'anchor' ? sourceNode.id : null;
+    
+    const idsToRemove = new Set([nodeId, ...descendantIds]);
+    if (anchorIdToRemove) { idsToRemove.add(anchorIdToRemove); }
+    setNodes((nds) => nds.filter((n) => !idsToRemove.has(n.id)));
+    setEdges((eds) => eds.filter((e) => !idsToRemove.has(e.source) && !idsToRemove.has(e.target)));
+  }, [getEdges, getNodes, setNodes, setEdges]);
+  
+  const onSend = useCallback(async (nodeId: string, message: string) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: 'Thinking...' } } : node
+      )
+    )
+  
+    const getHistory = (id: string): { role: 'user' | 'assistant'; content: string }[] => {
+      const currentNodes = getNodes();
+      const currentEdges = getEdges();
+      const history: { role: 'user' | 'assistant'; content: string }[] = []
+      let current = id
+      while (current) {
+        const node = currentNodes.find((n) => n.id === current)
+        if (!node) break
+        const data = node.data as MessageNodeData;
+        if (data.assistantMessage 
+            && typeof data.assistantMessage === 'string' 
+            && data.assistantMessage.trim() !== '' 
+            && data.assistantMessage !== 'Thinking...') {
+          history.unshift({ role: 'assistant', content: data.assistantMessage });
+        }
+        if (data.userMessage?.trim()) {
+          history.unshift({ role: 'user', content: data.userMessage })
+        }
+        const incoming = currentEdges.find((e) => e.target === current)
+        current = incoming?.source ?? ''
+      }
+      return history
+    }
+  
+    const messages: any[] = [
+      ...getHistory(nodeId),
+      { role: 'user' as const, content: message },
+    ]
 
-  const triggerBranch = useCallback((parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number; y: number }) => {
-    onBranchRef.current?.(parentId, selectedText, withContext, relativePos)
-  }, [])
+    console.log('messages', messages)
+  
+    try {
+      const stream = await openai.chat.completions.create({
+        model: 'grok-4',
+        messages,
+        stream: true,
+        temperature: 0.7,
+      })
+      
+      let fullResponse = ''
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || ''
+        fullResponse += content
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: fullResponse || 'Thinking...' } } : node
+          )
+        )
+      }
+
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: fullResponse, streamFinished: true } } : node
+        ) 
+      )
+
+      setPendingNodeId(nodeId);
+    } catch (error: any) {
+      console.error('Grok API error:', error)
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId ? {
+            ...node, 
+            data: { ...node.data, assistantMessage: `Error: ${error.message || 'Failed'}` },
+          } : node
+        )
+      )
+    }
+  }, [getNodes, getEdges, setNodes])
+
 
   const onBranch = useCallback(
     (parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number, y: number }) => {
-      const parentNode = nodes.find((n) => n.id === parentId)
-      if (!parentNode) return
-
+      const currentNodes = getNodes();
+      const parentNode = currentNodes.find(n => n.id === parentId);
+      if (!parentNode) return;
+      
       const anchorId = `anchor-${Date.now()}`;
       const newNodeId = `node-${Date.now()}`;
-
+      
       const anchorNode: Node = {
         id: anchorId,
         type: 'anchor',
@@ -75,22 +173,26 @@ function ReactFlowContent() {
         zIndex: 1001,       // Sits on top of the parent message
         data: {},
       };
-
+      
       const newNode: MessageNodeType = {
         id: newNodeId,
         type: 'message',
-        position: { x: parentNode.position.x + 450, y: parentNode.position.y },
+        position: { 
+          x: parentNode.position.x + relativePos.x + 85, // 60px to the right of the highlight
+          y: parentNode.position.y + relativePos.y - 20  // Slightly higher for better alignment
+        },
         zIndex: 1000,
         data: {
           userMessage: withContext
-            ? `Continuing from context:\n"${selectedText}"`
-            : selectedText,
+          ? `Continuing from context:\n"${selectedText}"`
+          : selectedText,
           assistantMessage: '',
-          onSend: triggerSend,
-          onBranch: triggerBranch,
+          onSend,
+          onBranch,
+          onDelete
         },
       }
-
+      
       setNodes((nds) => [...nds, anchorNode, newNode]);
       setEdges((eds) => [
         ...eds,
@@ -107,90 +209,9 @@ function ReactFlowContent() {
         },
       ]);
     },
-    [nodes, setNodes, setEdges, triggerSend, triggerBranch]
+    [onSend, onDelete, setNodes, setEdges, getNodes]
   )
-
-  const onSend = useCallback(
-    async (nodeId: string, message: string) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, assistantMessage: 'Thinking...' } }
-            : node
-        )
-      )
-
-      const getHistory = (id: string): { role: 'user' | 'assistant'; content: string }[] => {
-        const history: { role: 'user' | 'assistant'; content: string }[] = []
-        let current = id
-        while (current) {
-          const node = nodes.find((n) => n.id === current)
-          if (!node) break
-          const data = node.data
-          if (data.assistantMessage && data.assistantMessage.trim() && data.assistantMessage !== 'Thinking...') {
-            history.unshift({ role: 'assistant', content: data.assistantMessage })
-          }
-          if (data.userMessage?.trim()) {
-            history.unshift({ role: 'user', content: data.userMessage })
-          }
-          const incoming = edges.find((e) => e.target === current)
-          current = incoming?.source ?? ''
-        }
-        return history
-      }
-
-      const messages: any[] = [  // Temporary any to bypass TS — safe here
-        ...getHistory(nodeId),
-        { role: 'user' as const, content: message },
-      ]
-
-      try {
-        const stream = await openai.chat.completions.create({
-          model: 'grok-4',
-          messages,
-          stream: true,
-          temperature: 0.7,
-        })
-
-        let fullResponse = ''
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || ''
-          fullResponse += content
-          setNodes((nds) =>
-            nds.map((node) =>
-              node.id === nodeId
-                ? { ...node, data: { ...node.data, assistantMessage: fullResponse || 'Thinking...' } }
-                : node
-            )
-          )
-        }
-
-        setNodes((nds) =>
-          nds.map((node) =>
-            node.id === nodeId
-              ? { ...node, data: { ...node.data, assistantMessage: fullResponse, streamFinished: true } }
-              : node
-          )
-        )
-
-        setPendingNodeId(nodeId);
-      } catch (error: any) {
-        console.error('Grok API error:', error)
-        setNodes((nds) =>
-          nds.map((node) =>
-            node.id === nodeId
-              ? {
-                  ...node,
-                  data: { ...node.data, assistantMessage: `Error: ${error.message || 'Failed'}` },
-                }
-              : node
-          )
-        )
-      }
-    },
-    [setNodes]
-  )
-
+  
   useEffect(() => {
     if (!pendingNodeId) return;
 
@@ -200,21 +221,22 @@ function ReactFlowContent() {
     if (parentNode?.data.streamFinished && parentNode.measured?.height) {
       const { x, y } = parentNode.position;
       const height = parentNode.measured.height;
-      const spacing = 50;
-
+      const spacing = 25;
+      
       const newChildId = `node-${Date.now()}`;
       const newChildNode: MessageNodeType = {
         id: newChildId,
         type: 'message',
         position: { x, y: y + height + spacing },
         data: { 
-            userMessage: '', 
-            assistantMessage: '', 
-            onSend: triggerSend, // Use your refs here
-            onBranch: triggerBranch
+          userMessage: '', 
+          assistantMessage: '', 
+          onSend,
+          onBranch,
+          onDelete
         },
       };
-
+      
       setNodes((nds) => nds.concat(newChildNode));
       setEdges((eds) => eds.concat({
         id: `e${pendingNodeId}-${newChildId}`,
@@ -223,64 +245,57 @@ function ReactFlowContent() {
         sourceHandle: 'bottom',
         targetHandle: 'top'
       }));
-
+      
       setPendingNodeId(null); // Clear pending status
     }
-  }, [nodes, pendingNodeId, setNodes, setEdges]);
+  }, [nodes, pendingNodeId, onSend, onBranch, onDelete, setNodes, setEdges]);
 
-  useEffect(() => {
-    if (nodes.length === 0) {
-      setNodes([
-        {
-          id: 'root',
-          type: 'message',
-          position: { x: 400, y: 200 },
-          data: {
-            userMessage: '',
-            assistantMessage:
-              'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
-            onSend: triggerSend,
-            onBranch: triggerBranch,
-          },
+useEffect(() => {
+  if (nodes.length === 0) {
+    setNodes([
+      {
+        id: 'root',
+        type: 'message',
+        position: { x: 400, y: 200 },
+        data: {
+          userMessage: '',
+          assistantMessage:
+          'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
+          onSend,
+          onBranch,
+          onDelete
         },
-      ])
-    }
-  }, [setNodes, triggerSend, triggerBranch])
+      },
+    ])
+  }
+}, [setNodes, onSend, onBranch, onDelete])
 
-  useEffect(() => {
-    onSendRef.current = onSend
-  }, [onSend])
-
-  useEffect(() => {
-    onBranchRef.current = onBranch
-  }, [onBranch])
-
-  return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      nodeTypes={nodeTypes}
-      panOnScroll={true}
-      zoomOnScroll={false}
-      zoomActivationKeyCode="Meta"
-      fitView
-    >
-      <Background />
-      <Controls />
-      <MiniMap />
-    </ReactFlow>
-  )
+return (
+  <ReactFlow
+  nodes={nodes}
+  edges={edges}
+  onNodesChange={onNodesChange}
+  onEdgesChange={onEdgesChange}
+  nodeTypes={nodeTypes}
+  panOnScroll={true}
+  zoomOnScroll={false}
+  zoomActivationKeyCode="Meta"
+  fitView
+  >
+  <Background />
+  <Controls />
+  <MiniMap />
+  </ReactFlow>
+)
 }
 
 // Main App component — only wraps with provider
 export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <ReactFlowProvider>
-        <ReactFlowContent />
-      </ReactFlowProvider>
+    <ReactFlowProvider>
+    <ReactFlowContent />
+    </ReactFlowProvider>
     </div>
   )
 }
