@@ -76,43 +76,64 @@ function ReactFlowContent() {
   }, [getEdges, getNodes, setNodes, setEdges]);
   
   const onSend = useCallback(async (nodeId: string, message: string) => {
+    const currentNodes = getNodes();
+    const currentEdges = getEdges();
+
     setNodes((nds) =>
       nds.map((node) =>
-        node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: 'Thinking...' } } : node
+        node.id === nodeId 
+          ? { ...node, data: { ...node.data, userMessage: message, assistantMessage: 'Thinking...' } } 
+          : node
       )
     )
   
     const getHistory = (id: string): { role: 'user' | 'assistant'; content: string }[] => {
-      const currentNodes = getNodes();
-      const currentEdges = getEdges();
-      const history: { role: 'user' | 'assistant'; content: string }[] = []
-      let current = id
-      while (current) {
-        const node = currentNodes.find((n) => n.id === current)
-        if (!node) break
-        const data = node.data as MessageNodeData;
-        if (data.assistantMessage 
-            && typeof data.assistantMessage === 'string' 
-            && data.assistantMessage.trim() !== '' 
-            && data.assistantMessage !== 'Thinking...') {
-          history.unshift({ role: 'assistant', content: data.assistantMessage });
+      const history: { role: 'user' | 'assistant'; content: string }[] = [];
+      let searchId: string | undefined = id;
+
+      while (searchId) {
+        const node = currentNodes.find((n) => n.id === searchId);
+        if (!node) break;
+
+        if (node.type === 'anchor') {
+          searchId = node.parentId; 
+          continue; 
         }
-        if (data.userMessage?.trim()) {
-          history.unshift({ role: 'user', content: data.userMessage })
+
+        if (node.type === 'message') {
+          const data = node.data as MessageNodeData;
+          
+          // Skip the 'current' node's data because we are passing the 
+          // new 'message' manually in the final array.
+          if (node.id !== nodeId) {
+            if (data.assistantMessage && data.assistantMessage !== 'Thinking...' && data.assistantMessage.trim()) {
+              history.unshift({ role: 'assistant', content: data.assistantMessage });
+            }
+            if (data.userMessage && data.userMessage.trim()) {
+              history.unshift({ role: 'user', content: data.userMessage });
+            }
+          }
         }
-        const incoming = currentEdges.find((e) => e.target === current)
-        current = incoming?.source ?? ''
+
+        // Logic to move up the tree
+        const incoming = currentEdges.find((e) => e.target === searchId);
+        if (!incoming) break;
+
+        const sourceNode = currentNodes.find(n => n.id === incoming.source);
+        if (sourceNode?.type === 'anchor' && sourceNode.parentId) {
+          searchId = sourceNode.parentId;
+        } else {
+          searchId = incoming.source;
+        }
       }
-      return history
-    }
+      return history;
+    };
   
     const messages: any[] = [
       ...getHistory(nodeId),
       { role: 'user' as const, content: message },
     ]
 
-    console.log('messages', messages)
-  
     try {
       const stream = await openai.chat.completions.create({
         model: 'grok-4',
@@ -250,52 +271,52 @@ function ReactFlowContent() {
     }
   }, [nodes, pendingNodeId, onSend, onBranch, onDelete, setNodes, setEdges]);
 
-useEffect(() => {
-  if (nodes.length === 0) {
-    setNodes([
-      {
-        id: 'root',
-        type: 'message',
-        position: { x: 400, y: 200 },
-        data: {
-          userMessage: '',
-          assistantMessage:
-          'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
-          onSend,
-          onBranch,
-          onDelete
+  useEffect(() => {
+    if (nodes.length === 0) {
+      setNodes([
+        {
+          id: 'root',
+          type: 'message',
+          position: { x: 400, y: 200 },
+          data: {
+            userMessage: '',
+            assistantMessage:
+            'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
+            onSend,
+            onBranch,
+            onDelete
+          },
         },
-      },
-    ])
-  }
-}, [setNodes, onSend, onBranch, onDelete])
+      ])
+    }
+  }, [setNodes, onSend, onBranch, onDelete])
 
-return (
-  <ReactFlow
-  nodes={nodes}
-  edges={edges}
-  onNodesChange={onNodesChange}
-  onEdgesChange={onEdgesChange}
-  nodeTypes={nodeTypes}
-  panOnScroll={true}
-  zoomOnScroll={false}
-  zoomActivationKeyCode="Meta"
-  fitView
-  >
-  <Background />
-  <Controls />
-  <MiniMap />
-  </ReactFlow>
-)
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      nodeTypes={nodeTypes}
+      panOnScroll={true}
+      zoomOnScroll={false}
+      zoomActivationKeyCode="Meta"
+      fitView
+    >
+      <Background />
+      <Controls />
+      <MiniMap />
+    </ReactFlow>
+  )
 }
 
 // Main App component — only wraps with provider
 export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-    <ReactFlowProvider>
-    <ReactFlowContent />
-    </ReactFlowProvider>
+      <ReactFlowProvider>
+        <ReactFlowContent />
+      </ReactFlowProvider>
     </div>
   )
 }
