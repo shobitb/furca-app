@@ -76,9 +76,6 @@ function ReactFlowContent() {
   }, [getEdges, getNodes, setNodes, setEdges]);
   
   const onSend = useCallback(async (nodeId: string, message: string) => {
-    const currentNodes = getNodes();
-    const currentEdges = getEdges();
-
     setNodes((nds) =>
       nds.map((node) =>
         node.id === nodeId 
@@ -86,14 +83,25 @@ function ReactFlowContent() {
           : node
       )
     )
+
+    const formatPrompt = (userMsg: string, context?: string) => {
+      if (!context) return userMsg;
+      return `<context_attachment>\n${context}\n</context_attachment>\n\nUser follow-up: ${userMsg}`;
+    };
   
     const getHistory = (id: string): { role: 'user' | 'assistant'; content: string }[] => {
+      const currentNodes = getNodes();
+      const currentEdges = getEdges();
       const history: { role: 'user' | 'assistant'; content: string }[] = [];
       let searchId: string | undefined = id;
 
       while (searchId) {
         const node = currentNodes.find((n) => n.id === searchId);
         if (!node) break;
+
+        if (node.data.isIsolated && node.id !== id) {
+          break;
+        }
 
         if (node.type === 'anchor') {
           searchId = node.parentId; 
@@ -102,6 +110,8 @@ function ReactFlowContent() {
 
         if (node.type === 'message') {
           const data = node.data as MessageNodeData;
+
+          console.log('data.contextText', data.contextText);
           
           // Skip the 'current' node's data because we are passing the 
           // new 'message' manually in the final array.
@@ -109,8 +119,13 @@ function ReactFlowContent() {
             if (data.assistantMessage && data.assistantMessage !== 'Thinking...' && data.assistantMessage.trim()) {
               history.unshift({ role: 'assistant', content: data.assistantMessage });
             }
-            if (data.userMessage && data.userMessage.trim()) {
-              history.unshift({ role: 'user', content: data.userMessage });
+            if (data.userMessage || data.contextText) {
+              history.unshift(
+                { 
+                  role: 'user', 
+                  content: formatPrompt(data.userMessage || '', data.contextText) 
+                }
+              );
             }
           }
         }
@@ -126,13 +141,28 @@ function ReactFlowContent() {
           searchId = incoming.source;
         }
       }
+
       return history;
     };
   
-    const messages: any[] = [
-      ...getHistory(nodeId),
-      { role: 'user' as const, content: message },
-    ]
+    const currentNode = getNodes().find(n => n.id === nodeId);
+    if (!currentNode) return;
+    const currentNodeData = (currentNode.data as MessageNodeData);
+    const currentContext = currentNodeData.contextText;
+
+    console.log("DEBUG: currentNode Data", currentNode.id, currentNode.data);
+
+    const history = currentNodeData.isIsolated ? [] : getHistory(nodeId);
+
+    const messages = [
+      ...history,
+      { 
+        role: 'user' as const, 
+        content: formatPrompt(message, currentContext) 
+      },
+    ];
+
+    console.log('messages',messages);
 
     try {
       const stream = await openai.chat.completions.create({
@@ -175,7 +205,7 @@ function ReactFlowContent() {
 
 
   const onBranch = useCallback(
-    (parentId: string, selectedText: string, withContext: boolean, relativePos: { x: number, y: number }) => {
+    (parentId: string, selectedText: string, isolation: boolean, relativePos: { x: number, y: number }) => {
       const currentNodes = getNodes();
       const parentNode = currentNodes.find(n => n.id === parentId);
       if (!parentNode) return;
@@ -204,9 +234,9 @@ function ReactFlowContent() {
         },
         zIndex: 1000,
         data: {
-          userMessage: withContext
-          ? `Continuing from context:\n"${selectedText}"`
-          : selectedText,
+          contextText: selectedText,
+          isIsolated: isolation,
+          userMessage: '',
           assistantMessage: '',
           onSend,
           onBranch,
@@ -252,6 +282,7 @@ function ReactFlowContent() {
         data: { 
           userMessage: '', 
           assistantMessage: '', 
+          isIsolated: false,
           onSend,
           onBranch,
           onDelete

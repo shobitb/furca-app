@@ -7,8 +7,10 @@ import ReactMarkdown from 'react-markdown'
 export type MessageNodeData = {
     userMessage: string
     assistantMessage: string
+    contextText?: string,
+    isIsolated: boolean,
     onSend: (parentId: string, message: string) => void
-    onBranch: (id: string, text: string, withContext: boolean, pos: { x: number; y: number }) => void
+    onBranch: (id: string, text: string, isolation: boolean, pos: { x: number; y: number }) => void
     streamFinished?: boolean
     onDelete?: (id: string) => void;
     parentId?: string
@@ -62,7 +64,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
         }
     }, [])
     
-    const createBranch = (withContext: boolean) => {
+    const createBranch = (isolation: boolean) => {
         const selected = window.getSelection();
         if (!selected || selected.rangeCount === 0 || !nodeRef.current || !internalNode) return;
         const range = selected?.getRangeAt(0);
@@ -82,7 +84,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             };
             
             // Notify the App to create the node and edge
-            data.onBranch(id, selectedText, withContext, relativePos);
+            data.onBranch(id, selectedText, isolation, relativePos);
         }
         setMenuPosition(null)
     }
@@ -143,36 +145,56 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
         
         {/* User Input */}
         <div style={{ padding: '12px 16px 8px' }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-        <input
-        type="text"
-        value={userMessage}
-        onChange={(e) => setUserMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Type your message..."
-        style={{
-            flex: 1,
-            padding: '10px 12px',
-            border: '1px solid #ccc',
-            borderRadius: '8px',
-            fontSize: '14px',
-        }}
-        />
-        <button
-        onClick={handleSend}
-        style={{
-            padding: '10px 16px',
-            background: '#0066ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: '600',
-        }}
-        >
-        Send
-        </button>
-        </div>
+            {data.contextText && (
+                <div style={{
+                    background: '#f0f0f0',
+                    borderLeft: '4px solid #007bff',
+                    padding: '8px',
+                    marginBottom: '8px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    color: '#555',
+                    maxHeight: '60px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    position: 'relative'
+                }}>
+                    <strong style={{ display: 'block', fontSize: '0.6rem', color: '#007bff' }}>
+                        CONTEXT
+                    </strong>
+                    "{data.contextText}"
+                </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                    type="text"
+                    value={userMessage}
+                    onChange={(e) => setUserMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Type your message..."
+                    style={{
+                        flex: 1,
+                        padding: '10px 12px',
+                        border: '1px solid #ccc',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                    }}
+                />
+                <button
+                    onClick={handleSend}
+                    style={{
+                        padding: '10px 16px',
+                        background: '#0066ff',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                    }}
+                >
+                    Send
+                </button>
+            </div>
         </div>
         
         {/* Assistant Message */}
@@ -215,7 +237,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
                     onPointerDown={(e) => e.stopPropagation()}
                     >
                     <button
-                    onClick={() => createBranch(false)}
+                    onClick={() => createBranch(true)}
                     style={{
                         display: 'block',
                         width: '100%',
@@ -231,7 +253,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
                     Branch with selection only
                     </button>
                     <button
-                    onClick={() => createBranch(true)}
+                    onClick={() => createBranch(false)}
                     style={{
                         display: 'block',
                         width: '100%',
