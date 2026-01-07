@@ -106,11 +106,10 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             border: '1px solid #ddd',
             borderRadius: '12px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-            width: 680,
+            width: 400,
             fontFamily: 'system-ui, sans-serif',
         }}
         >
-        {/* 1. Delete Button (Hidden for Root) */}
         {id !== 'root' && (
             <button
                 onClick={(e) => {
@@ -139,11 +138,9 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             ✕
             </button>
         )}
-        {/* Input Port (left) */}
         <Handle type="target" position={Position.Top} id="top" style={{ left: '50%' }} />
         <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} />
         
-        {/* User Input */}
         <div style={{ padding: '12px 16px 8px' }}>
             {data.contextText && (
                 <div style={{
@@ -197,7 +194,6 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             </div>
         </div>
         
-        {/* Assistant Message */}
         {data.assistantMessage && (
             <div style={{ padding: '0 16px 16px' }}>
             <div
@@ -275,7 +271,6 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
                 </div>
             )}
             
-            {/* Output Port (right) */}
             <Handle type="source" position={Position.Right} id="output" style={{ top: '50%' }} />
             <Handle type="source" position={Position.Bottom} id="bottom" style={{ left: '50%' }} />
             </div>

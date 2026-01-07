@@ -16,19 +16,6 @@ import MessageNode, { MessageNodeData, type MessageNodeType } from './nodes/Mess
 import AnchorNode from './nodes/AnchorNode.tsx';
 import '@xyflow/react/dist/style.css'
 
-// import ELK from 'elkjs/lib/elk.bundled.js'
-
-// const elk = new ELK()
-
-// const elkOptions = {
-//   'elk.algorithm': 'layered',
-//   'elk.direction': 'DOWN',
-//   'elk.spacing.nodeNode': '80',
-//   'elk.layered.spacing.nodeNodeBetweenLayers': '120',
-//   'elk.layered.considerModelOrder': 'true',
-//   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-// }
-
 const nodeTypes = {
   message: MessageNode,
   anchor: AnchorNode
@@ -111,8 +98,6 @@ function ReactFlowContent() {
         if (node.type === 'message') {
           const data = node.data as MessageNodeData;
 
-          console.log('data.contextText', data.contextText);
-          
           // Skip the 'current' node's data because we are passing the 
           // new 'message' manually in the final array.
           if (node.id !== nodeId) {
@@ -219,9 +204,9 @@ function ReactFlowContent() {
         // Position is relative to the parent because we set parentId
         position: { x: relativePos.x - 4, y: relativePos.y - 4 },
         parentId: parentId, // This makes the anchor move with the message box
-        extent: 'parent' as const,   // Keeps it locked inside the parent container
+        extent: 'parent' as const, // Keeps it locked inside the parent container
         draggable: false,
-        zIndex: 1001,       // Sits on top of the parent message
+        zIndex: 1001, // Sits on top of the parent message
         data: {},
       };
       
@@ -229,7 +214,7 @@ function ReactFlowContent() {
         id: newNodeId,
         type: 'message',
         position: { 
-          x: parentNode.position.x + relativePos.x + 85, // 60px to the right of the highlight
+          x: parentNode.position.x + relativePos.x + 85,
           y: parentNode.position.y + relativePos.y - 20  // Slightly higher for better alignment
         },
         zIndex: 1000,
@@ -312,7 +297,7 @@ function ReactFlowContent() {
           data: {
             userMessage: '',
             assistantMessage:
-            'What are you curious about today?\n\nType your question or idea below and press Send (or Enter) to explore it with Grok.\n\nSelect text in a response → right-click to branch.',
+            'What do you want to explore today? Type and press Send (or Enter).\n\nSelect any text from a response, and right-click to branch.',
             onSend,
             onBranch,
             onDelete
