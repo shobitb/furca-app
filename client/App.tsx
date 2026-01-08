@@ -7,7 +7,6 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
-  updateNodeData,
   type Node,
   type Edge
 } from '@xyflow/react'
