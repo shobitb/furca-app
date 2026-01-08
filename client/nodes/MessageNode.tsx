@@ -24,6 +24,7 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
     
     const nodeRef = useRef<HTMLDivElement>(null)
     const menuRef = useRef<HTMLDivElement>(null)
+    const selectionSnapshot = useRef<{ text: string; range: Range | null } | null>(null);
     const { screenToFlowPosition } = useReactFlow();
     
     const internalNode = useInternalNode(id);
@@ -48,29 +49,30 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
     }, [handleSend])
     
     const createBranch = (isolation: boolean) => {
-        const selected = window.getSelection();
-        if (!selected || selected.rangeCount === 0 || !nodeRef.current || !internalNode) return;
-        const range = selected?.getRangeAt(0);
-        const selectedText = selected?.toString().trim() || ''
-        if (selectedText) {
-            // Calculate position relative to the node container
-            const textRect = range.getBoundingClientRect();
+        const snapshot = selectionSnapshot.current;
+        if (!snapshot || !snapshot.range || !internalNode) return;
 
-            const screenCenter = {
-                x: textRect.left + textRect.width / 2,
-                y: textRect.top + textRect.height / 2,
-            };
-            const flowPos = screenToFlowPosition(screenCenter);
-            const relativePos = {
-                x: flowPos.x - internalNode.internals.positionAbsolute.x,
-                y: flowPos.y - internalNode.internals.positionAbsolute.y,
-            };
-            
-            // Notify the App to create the node and edge
-            data.onBranch(id, selectedText, isolation, relativePos);
-        }
-        setMenuPosition(null)
-    }
+        const { text, range } = snapshot;
+
+        const textRect = range.getBoundingClientRect();
+
+        const screenCenter = {
+            x: textRect.left + textRect.width / 2,
+            y: textRect.top + textRect.height / 2,
+        };
+
+        const flowPos = screenToFlowPosition(screenCenter);
+        
+        const relativePos = {
+            x: flowPos.x - internalNode.internals.positionAbsolute.x,
+            y: flowPos.y - internalNode.internals.positionAbsolute.y,
+        };
+        
+        data.onBranch(id, text, isolation, relativePos);
+        
+        setMenuPosition(null);
+        selectionSnapshot.current = null;
+    };
 
     useEffect(() => {
         const handleSelectionChange = () => {
@@ -80,21 +82,24 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             // 1. Check if text is actually selected and if it's inside THIS node
             if (selectedText && selectedText.length > 0 && nodeRef.current?.contains(selection?.anchorNode || null)) {
                 const range = selection?.getRangeAt(0);
-                const rect = range?.getBoundingClientRect();
-
-                if (rect) {
-                    setMenuPosition({
-                        // Place it horizontally centered and slightly above the selection
-                        x: rect.left + rect.width / 2,
-                        y: rect.top - 10 
-                    });
-                }
+                if (range) {
+                    const rect = range.getBoundingClientRect();
+                    if (rect) {
+                        setMenuPosition({
+                            // Place it horizontally centered and slightly above the selection
+                            x: rect.left + rect.width / 2,
+                            y: rect.top - 10 
+                        });
+                        selectionSnapshot.current = { text: selectedText, range: range.cloneRange() };
+                    }
+                }  
             } else {
                 // 2. Hide the menu if selection is cleared or user clicks away
                 if (!selection || selection.isCollapsed) {
                     // Check if the focus is still on our menu before hiding
                     // (This prevents the menu from closing the moment you click a button)
                     setMenuPosition(null);
+                    selectionSnapshot.current = null;
                 }
             }
         };
