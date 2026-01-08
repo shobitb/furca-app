@@ -63,6 +63,18 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             setMenuPosition(null)
         }
     }, [])
+
+    const handleMouseUp = useCallback((e: React.MouseEvent) => {
+        const selection = window.getSelection();
+        const selectedText = selection?.toString().trim();
+        
+        if (selectedText) {
+            setMenuPosition({ x: e.clientX, y: e.clientY });
+        } else {
+            // Only close if we click away
+            setMenuPosition(null);
+        }
+    }, []);
     
     const createBranch = (isolation: boolean) => {
         const selected = window.getSelection();
@@ -198,7 +210,9 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
             <div style={{ padding: '0 16px 16px' }}>
             <div
             onContextMenu={handleContextMenu}
-            className="nodrag"
+            onMouseUp={handleMouseUp}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="nodrag nopan"
             style={{
                 background: '#f8f9fa',
                 padding: '14px 16px',
@@ -208,6 +222,8 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
                 userSelect: 'text',
                 cursor: 'text',
                 position: 'relative',
+                pointerEvents: 'all',
+                WebkitUserSelect: 'text'
             }}
             >
             <ReactMarkdown>{data.assistantMessage}</ReactMarkdown>
