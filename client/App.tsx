@@ -7,13 +7,14 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  updateNodeData,
   type Node,
   type Edge
 } from '@xyflow/react'
 import { useEffect, useCallback, useState } from 'react'
-import OpenAI from 'openai'
 import MessageNode, { MessageNodeData, type MessageNodeType } from './nodes/MessageNode.tsx'
 import AnchorNode from './nodes/AnchorNode.tsx';
+import outputs from '../amplify_outputs.json';
 import '@xyflow/react/dist/style.css'
 
 const nodeTypes = {
@@ -21,19 +22,13 @@ const nodeTypes = {
   anchor: AnchorNode
 }
 
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_GROK_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-  dangerouslyAllowBrowser: true,
-})
-
 // Inner component — this is where hooks are allowed
 function ReactFlowContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
   
-  const { getNodes, getEdges } = useReactFlow();
+  const { getNodes, getEdges, updateNodeData } = useReactFlow();
 
   const onDelete = useCallback((nodeId: string) => {
     const currentEdges = getEdges();
@@ -135,8 +130,6 @@ function ReactFlowContent() {
     const currentNodeData = (currentNode.data as MessageNodeData);
     const currentContext = currentNodeData.contextText;
 
-    console.log("DEBUG: currentNode Data", currentNode.id, currentNode.data);
-
     const history = currentNodeData.isIsolated ? [] : getHistory(nodeId);
 
     const messages = [
@@ -147,32 +140,33 @@ function ReactFlowContent() {
       },
     ];
 
-    console.log('messages',messages);
-
     try {
-      const stream = await openai.chat.completions.create({
-        model: 'grok-4',
-        messages,
-        stream: true,
-        temperature: 0.7,
-      })
-      
-      let fullResponse = ''
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || ''
-        fullResponse += content
-        setNodes((nds) =>
-          nds.map((node) =>
-            node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: fullResponse || 'Thinking...' } } : node
-          )
-        )
+      const response = await fetch(outputs.custom.grokProxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+      });
+
+      if (!response.ok || !response.body) throw new Error('Proxy error');
+
+      // For Streaming support:
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = ""; // To keep track of the full message
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // 1. Decode the raw chunk (e.g., " Hello")
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedText += chunk;
+
+        // 2. Update your React Flow node immediately
+        updateNodeData(nodeId, { assistantMessage: accumulatedText })
       }
 
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, assistantMessage: fullResponse, streamFinished: true } } : node
-        ) 
-      )
+      updateNodeData(nodeId, { assistantMessage: accumulatedText, streamFinished: true });
 
       setPendingNodeId(nodeId);
     } catch (error: any) {
