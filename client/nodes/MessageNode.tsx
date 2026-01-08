@@ -47,35 +47,6 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
         }
     }, [handleSend])
     
-    const handleContextMenu = useCallback((e: React.MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        
-        const selection = window.getSelection()
-        const selectedText = selection?.toString().trim()
-        
-        if (selectedText) {
-            setMenuPosition({
-                x: e.clientX,
-                y: e.clientY
-            })
-        } else {
-            setMenuPosition(null)
-        }
-    }, [])
-
-    const handleMouseUp = useCallback((e: React.MouseEvent) => {
-        const selection = window.getSelection();
-        const selectedText = selection?.toString().trim();
-        
-        if (selectedText) {
-            setMenuPosition({ x: e.clientX, y: e.clientY });
-        } else {
-            // Only close if we click away
-            setMenuPosition(null);
-        }
-    }, []);
-    
     const createBranch = (isolation: boolean) => {
         const selected = window.getSelection();
         if (!selected || selected.rangeCount === 0 || !nodeRef.current || !internalNode) return;
@@ -100,195 +71,217 @@ export default function MessageNode({ data, id }: NodeProps<MessageNodeType>) {
         }
         setMenuPosition(null)
     }
-    
-    // Close menu on outside click
+
     useEffect(() => {
-        if (!menuPosition) return
-        
-        const handleClick = () => setMenuPosition(null)
-        document.addEventListener('click', handleClick)
-        return () => document.removeEventListener('click', handleClick)
-    }, [menuPosition])
+        const handleSelectionChange = () => {
+            const selection = window.getSelection();
+            const selectedText = selection?.toString().trim();
+
+            // 1. Check if text is actually selected and if it's inside THIS node
+            if (selectedText && selectedText.length > 0 && nodeRef.current?.contains(selection?.anchorNode || null)) {
+                const range = selection?.getRangeAt(0);
+                const rect = range?.getBoundingClientRect();
+
+                if (rect) {
+                    setMenuPosition({
+                        // Place it horizontally centered and slightly above the selection
+                        x: rect.left + rect.width / 2,
+                        y: rect.top - 10 
+                    });
+                }
+            } else {
+                // 2. Hide the menu if selection is cleared or user clicks away
+                if (!selection || selection.isCollapsed) {
+                    // Check if the focus is still on our menu before hiding
+                    // (This prevents the menu from closing the moment you click a button)
+                    setMenuPosition(null);
+                }
+            }
+        };
+
+        document.addEventListener('selectionchange', handleSelectionChange);
+        return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    }, [id]);
     
     return (
         <div
-        ref={nodeRef}
-        style={{
-            background: 'white',
-            border: '1px solid #ddd',
-            borderRadius: '12px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-            width: 400,
-            fontFamily: 'system-ui, sans-serif',
-        }}
+            ref={nodeRef}
+            style={{
+                background: 'white',
+                border: '1px solid #ddd',
+                borderRadius: '12px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                width: 400,
+                fontFamily: 'system-ui, sans-serif',
+            }}
         >
-        {id !== 'root' && (
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (data.onDelete) data.onDelete(id);
-                }}
-                style={{
-                    position: 'absolute',
-                    top: '-12px',
-                    right: '-12px',
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    background: '#ef4444',
-                    color: 'white',
-                    border: '2px solid white',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '12px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                    zIndex: 100
-                }}
-            >
-            ✕
-            </button>
-        )}
-        <Handle type="target" position={Position.Top} id="top" style={{ left: '50%' }} />
-        <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} />
-        
-        <div style={{ padding: '12px 16px 8px' }}>
-            {data.contextText && (
-                <div style={{
-                    background: '#f0f0f0',
-                    borderLeft: '4px solid #007bff',
-                    padding: '8px',
-                    marginBottom: '8px',
-                    borderRadius: '4px',
-                    fontSize: '0.8rem',
-                    color: '#555',
-                    maxHeight: '60px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    position: 'relative'
-                }}>
-                    <strong style={{ display: 'block', fontSize: '0.6rem', color: '#007bff' }}>
-                        CONTEXT
-                    </strong>
-                    "{data.contextText}"
-                </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                    type="text"
-                    value={userMessage}
-                    onChange={(e) => setUserMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type your message..."
-                    style={{
-                        flex: 1,
-                        padding: '10px 12px',
-                        border: '1px solid #ccc',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                    }}
-                />
+            {id !== 'root' && (
                 <button
-                    onClick={handleSend}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (data.onDelete) data.onDelete(id);
+                    }}
                     style={{
-                        padding: '10px 16px',
-                        background: '#0066ff',
+                        position: 'absolute',
+                        top: '-12px',
+                        right: '-12px',
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        background: '#ef4444',
                         color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
+                        border: '2px solid white',
                         cursor: 'pointer',
-                        fontWeight: '600',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '12px',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        zIndex: 100
                     }}
                 >
-                    Send
+                ✕
                 </button>
-            </div>
-        </div>
+            )}
+            <Handle type="target" position={Position.Top} id="top" style={{ left: '50%' }} />
+            <Handle type="target" position={Position.Left} id="input" style={{ top: '50%' }} />
         
-        {data.assistantMessage && (
-            <div style={{ padding: '0 16px 16px' }}>
-            <div
-            onContextMenu={handleContextMenu}
-            onMouseUp={handleMouseUp}
-            onTouchStart={(e) => e.stopPropagation()}
-            className="nodrag nopan"
-            style={{
-                background: '#f8f9fa',
-                padding: '14px 16px',
-                borderRadius: '10px',
-                lineHeight: '1.5',
-                fontSize: '14px',
-                userSelect: 'text',
-                cursor: 'text',
-                position: 'relative',
-                pointerEvents: 'all',
-                WebkitUserSelect: 'text'
-            }}
-            >
-            <ReactMarkdown>{data.assistantMessage}</ReactMarkdown>
-            
-            {/* Context Menu */}
-            {menuPosition && (
-                createPortal(<div
-                    ref={menuRef}
-                    style={{
-                        position: 'fixed',
-                        whiteSpace: 'nowrap',
-                        left: menuPosition.x,
-                        top: menuPosition.y,
-                        background: 'white',
-                        border: '1px solid #ccc',
-                        borderRadius: '8px',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-                        zIndex: 10000,
-                        padding: '4px 0',
-                        fontSize: '13px',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    >
-                    <button
-                    onClick={() => createBranch(true)}
-                    style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '10px 12px',
-                        textAlign: 'left',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                    >
-                    Branch with selection only
-                    </button>
-                    <button
-                    onClick={() => createBranch(false)}
-                    style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '10px 12px',
-                        textAlign: 'left',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                    >
-                    Branch with selection and context
-                    </button>
-                    </div>,
-                    document.body)
+            <div style={{ padding: '12px 16px 8px' }}>
+                {data.contextText && (
+                    <div style={{
+                        background: '#f0f0f0',
+                        borderLeft: '4px solid #007bff',
+                        padding: '8px',
+                        marginBottom: '8px',
+                        borderRadius: '4px',
+                        fontSize: '0.8rem',
+                        color: '#555',
+                        maxHeight: '60px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        position: 'relative'
+                    }}>
+                        <strong style={{ display: 'block', fontSize: '0.6rem', color: '#007bff' }}>
+                            CONTEXT
+                        </strong>
+                        "{data.contextText}"
+                    </div>
                 )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                        type="text"
+                        value={userMessage}
+                        onChange={(e) => setUserMessage(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Type your message..."
+                        style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            border: '1px solid #ccc',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                        }}
+                    />
+                    <button
+                        onClick={handleSend}
+                        style={{
+                            padding: '10px 16px',
+                            background: '#0066ff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontWeight: '600',
+                        }}
+                    >
+                        Send
+                    </button>
                 </div>
-                </div>
+            </div>
+        
+            {data.assistantMessage && (
+                <div style={{ padding: '0 16px 16px' }}>
+                <div
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className="nodrag nopan"
+                    style={{
+                        background: '#f8f9fa',
+                        padding: '14px 16px',
+                        borderRadius: '10px',
+                        lineHeight: '1.5',
+                        fontSize: '14px',
+                        userSelect: 'text',
+                        cursor: 'text',
+                        position: 'relative',
+                        pointerEvents: 'all',
+                        WebkitUserSelect: 'text'
+                    }}
+                >
+                    <ReactMarkdown>{data.assistantMessage}</ReactMarkdown>
+                
+                    {/* Context Menu */}
+                    {menuPosition && (
+                        createPortal(
+                            <div
+                                ref={menuRef}
+                                style={{
+                                    position: 'fixed',
+                                    whiteSpace: 'nowrap',
+                                    left: menuPosition.x,
+                                    top: menuPosition.y,
+                                    background: 'white',
+                                    border: '1px solid #ccc',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                                    zIndex: 10000,
+                                    padding: '4px 0',
+                                    fontSize: '13px',
+                                    transform: 'translate(-50%, -120%)'
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <button
+                                    onClick={() => createBranch(true)}
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                >
+                                    Branch with selection only
+                                </button>
+                                <button
+                                    onClick={() => createBranch(false)}
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                >
+                                    Branch with selection and context
+                                </button>
+                            </div>, document.body)
+                        )}
+                        </div>
+                    </div>
             )}
             
             <Handle type="source" position={Position.Right} id="output" style={{ top: '50%' }} />
             <Handle type="source" position={Position.Bottom} id="bottom" style={{ left: '50%' }} />
-            </div>
-        )
-    }
+        </div>
+    )
+}
